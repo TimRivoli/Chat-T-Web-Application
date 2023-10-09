@@ -1,4 +1,4 @@
-# chatbot_web_application
+# chatbot_chatty_web_application
 Chatbox web application
 ## 📚 Description
 Demonstrates:
