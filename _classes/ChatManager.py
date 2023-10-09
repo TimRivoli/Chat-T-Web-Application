@@ -8,7 +8,7 @@ class ChatManager:
 	TAG = "ChatManager"
 	currentModel = defaultModel
 	conversation_token_count = 0
-	chatModes = []
+	chat_modes = []
 	conversation = Conversation()
 	messages_extended = []
 	chatUsage = []
@@ -18,7 +18,7 @@ class ChatManager:
 		print("Initializing ChatManager")
 		openai.api_key = openai_api_key
 		self.sm = StorageManager()
-		self.chatModes = self.sm.get_chat_modes()
+		self.chat_modes = self.sm.get_chat_modes()
 
 	def shut_down(self):
 		self.sm.shut_down()
@@ -112,7 +112,6 @@ class ChatManager:
 		messages.append(ChatMessage("system", "You will be given a conversation, your task is to summarize it making sure to include information provided by the user"))
 		if self.conversation.summary:
 			messages.append(ChatMessage("user", "Please generate a concise summary of this conversation. Make sure to include information provided by the user: " + self.conversation.summary))
-
 		for m in self.messages_extended:
 			messages.append(ChatMessage(m.role, m.content))
 
@@ -140,6 +139,7 @@ class ChatManager:
 
 
 # ------------------------------------------------------- Chat management ---------------------------------------------------------
+	def get_chat_modes(self): return self.chat_modes
 	def toggle_engine(self):
 		if self.currentModel == self.defaultModel:
 			self.currentModel = self.enhancedModel
