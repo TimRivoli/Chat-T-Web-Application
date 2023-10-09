@@ -1,5 +1,5 @@
 # chatbot_chatty_web_application
-Chatbox web application
+Chatbot web application
 ## 📚 Description
 Demonstrates:
   -Web-based Chat interface using OpenAI chat completions API
