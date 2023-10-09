@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversation List</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div id="chat-container">
+        {% for conversation in conversations %}
+                <div class="conversation-container">
+                    <div class="conversation-title" id="title-{{ conversation.conversationID }}">
+						{{ conversation.title }}
+						<div class="buttons-container">
+							<button class="load-button button" data-id="{{ conversation.conversationID }}">Load</button>
+							<button class="details-button button" data-id="{{ conversation.conversationID }}">Details</button>
+							<button class="edit-button button hidden" data-id="{{ conversation.conversationID }}">Edit</button>
+						</div>
+					</div>
+                    <div class="conversation-summary hidden" id="summary-{{ conversation.conversationID }}">
+                       {{ conversation.summary|safe }} 
+                    </div>
+                    <div class="conversation-other-fields hidden" id="other-fields-{{ conversation.conversationID }}">
+                        <!-- Add other fields as needed, e.g., dateCreated, dateAccessed, etc. -->
+                    </div>
+					<div id="edit-container-{{ conversation.conversationID }}" class="buttons-container hidden">
+                        <form id="update-form-{{ conversation.conversationID }}" action="/update/{{ conversation.conversationID }}" method="post" class="update-form">
+							<input class="user-input big-input" type="text" name="title" value="{{ conversation.title }}">
+							<textarea class="user-input big-input"  name="summary" rows="15" class="editable summary">{{ conversation.summary }}</textarea>
+							<button class="save-button button" data-id="{{ conversation.conversationID }}">Save</button>
+							<button class="cancel-button button" data-id="{{ conversation.conversationID }}">Cancel</button>
+                        </form>
+					</div>
+				</div>
+        {% endfor %}
+	</div>
+<script src="{{ url_for('static', filename='conversation_list.js') }}"></script>
+</body>
+</html>

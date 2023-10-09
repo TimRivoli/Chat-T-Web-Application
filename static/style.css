@@ -1,0 +1,108 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f5f5f5;
+    font-size: 14px; 
+    margin: 0;
+    padding: 15px;
+}
+
+label { padding: 5px;}
+
+#chat-container {
+    margin-top: 220px; 
+    max-width: 1800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #fff;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+    box-sizing: border-box;
+    position: relative;
+    top: 250px
+    transform: translateY(-50%);
+}
+
+#chat-box {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.user-message {
+    background-color: #dff0d8;
+    padding: 10px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+
+.conversation-title {
+    background-color: #dff0d8;
+    padding: 10px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+	font-size: 16px;
+	font-weight: bold;
+	width: 100%;
+	display: flex;
+	align-items: center;
+}
+
+.bot-message, .conversation-summary, pre{
+    background-color: #d9edf7;
+    padding: 10px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    text-align: left;
+	text-indent: 0px;
+	white-space: pre-wrap;
+	word-wrap: break-word;
+}
+
+#user-input-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+	justify-content: space-between;
+}
+
+#user-input, #user-instructions {
+    flex-grow: 1;
+    padding: 15px; 
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+.big-input { width: 100%; }
+
+#user-instructions {width:100%}
+
+#buttons-container {
+    display: flex;
+    align-items: center;
+	justify-content: space-between;
+}
+
+.button {
+    margin-left: 5px;
+	background-color: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    padding: 10px 20px;
+    cursor: pointer;
+}
+
+.visible{ display: inline-block; }
+.hidden { display: none; }
+
+#UserName {
+    padding: 10px;
+    font-size: 14px;
+    border: none;
+    background-color: #f9f9f9;
+}
+
+.conversation-container {
+	padding: 10px;
+	margin: 10px;
+}
+
