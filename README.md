@@ -2,6 +2,7 @@
 Chatbot web application
 ## 📚 Description
 Demonstrates:
+  
   -Web-based Chat interface using OpenAI chat completions API
   
   -ChatManager: handles the active conversation and interaction with the completions API
