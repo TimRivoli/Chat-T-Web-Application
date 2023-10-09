@@ -115,7 +115,10 @@ def logout():
 def index():
 	print("Route: default")
 	if verify_session():
-		return render_template('conversation.html', username=session['email'] )
+		cm = get_chat_manager()
+		modes=[]
+		for m in cm.get_chat_modes(): modes.append(m.activityName)
+		return render_template('conversation.html', username=session['email'], chatActivityModes=modes )
 	else:
 		return 'You are not logged in.'
 
@@ -134,15 +137,18 @@ def chat_query():
 	print("Route: chat_query")
 	if verify_session():
 		question = request.form['user_input'][:max_question_length].strip()
+		chat_activity_name = request.form['chat_activity_mode']
 		response = ""
 		if question !='':
 			x = request.form['temperature']
 			temperature = float(x)/10		
 			user_instructions = request.form['user_instructions'][:max_question_length].strip()
-			language_option = "English"
-			activity_mode = ChatActivityType("Conversation", "Start a conversation about the given text, be informative in your responses", True, False, False, temperature=temperature)
+			language_option = "German"
+			chat_activity_mode = None
 			cm = get_chat_manager()
-			response = cm.chatbot_query(question, activity_mode, language_option, user_instructions)
+			for m in cm.get_chat_modes(): 
+				if m.activityName == chat_activity_name: chat_activity_mode = m
+			response = cm.chatbot_query(question, chat_activity_mode, language_option, user_instructions)
 			#chatBox.innerHTML += `<div class="bot-message">${response.response}</div>`; response is appended via javascript function
 		return jsonify({'response': response})
 	else:
