@@ -1,4 +1,4 @@
-# chatbot_chatty_web_application
+# Chat-T (chatty) web application
 Chatbot web application
 ## 📚 Description
 Demonstrates:
