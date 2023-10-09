@@ -9,6 +9,7 @@ const sendButton = document.getElementById('send-button');
 const conversationMode = document.getElementById('conversation-mode'); 
 const responseSize = document.getElementById('response-size'); 
 const temperature = document.getElementById('temperature'); 
+const chatActivityMode = document.getElementById('chat-activity-mode'); 
 const customInstructions = document.getElementById('user-instructions'); 
 
 //other
@@ -22,7 +23,7 @@ sendButton.addEventListener('click', async () => {
     const userMessage = userInput.value;
     addUserMessage(userMessage);
 	userInput.value = '';
-    const formData = new URLSearchParams({user_input: userMessage, conversation_mode: conversationMode.checked, response_size: responseSize.value, temperature: temperature.value, user_instructions: customInstructions.value});
+    const formData = new URLSearchParams({user_input: userMessage, conversation_mode: conversationMode.checked, response_size: responseSize.value, chat_activity_mode: chatActivityMode.value, temperature: temperature.value, user_instructions: customInstructions.value});
     const response = await fetch('/chat_query', {method: 'POST', body: formData,}).then(response => response.json());
 	addResponseMessage(response.response);
     chatBox.scrollTop = chatBox.scrollHeight;
