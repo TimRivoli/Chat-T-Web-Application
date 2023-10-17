@@ -15,6 +15,7 @@ class StorageManager:
 	sync_in_progress = False
 	sync_needed = True
 	last_synced = 0
+	webClientID = ""
 	sync_cooldown = 83333  # milliseconds = 5 min
 	sql_mgr = None
 	fb_mgr = None
@@ -34,13 +35,6 @@ class StorageManager:
 			#self.download_registered_device_settings()
 			if self.subscription_level > 0:
 				self.sync_databases()	
-
-	# def download_registered_device_settings(self):
-		# s = self.fb_mgr.get_device_settings()
-		# self.subscription_level = s.subscription_level
-		# self.use_google_auth = s.use_google_auth
-		# self.sync_conversations = s.sync_conversations and self.use_google_auth
-		# self.sync_usage = s.sync_usage
 
 	def shut_down(self):
 		self.sql_mgr.shut_down()
@@ -123,7 +117,7 @@ class StorageManager:
 #---------------------------------------------------------------- Usage ------------------------------------------------------
 	def append_usage(self, usage):
 		usage.userID = self.user_id
-		usage.androidID = self.androidID
+		usage.androidID = self.android_id
 		self.sql_mgr.append_usage(usage)
 
 	def get_sample_prompt(self, activityName):
@@ -138,7 +132,7 @@ class StorageManager:
 		sync_conversations_up = self.sync_conversations
 		TOCRefreshNeeded = False
 		timeSinceLastSync = get_current_timestamp() - self.last_synced
-		# self.sql_mgr.applyFixes(self.user_id, self.androidID)
+		# self.sql_mgr.applyFixes(self.user_id, self.android_id)
 		if self.fb_mgr.is_functional and not self.sync_in_progress:
 			if not self.sync_needed or timeSinceLastSync <= self.sync_cooldown:
 				print(f"Sync is not needed or on cooldown. Needed: {self.sync_needed} Cooldown: {timeSinceLastSync}")
@@ -151,7 +145,7 @@ class StorageManager:
 				# ------------------------------ Usage update -----------------------------------------
 				if self.sync_usage:
 					print("Uploading usage to Firebase...")
-					usages = self.sql_mgr.getUsage(self.user_id, self.androidID)
+					usages = self.sql_mgr.getUsage(self.user_id, self.android_id)
 					usageUpdates = self.fb_mgr.saveUsage(usages)
 					print(f"SyncUp usage updates: {usageUpdates}")
 
@@ -174,8 +168,11 @@ class StorageManager:
 				if self.sync_conversations and self.fb_mgr.is_functional:
 					d1 = self.sql_mgr.get_conversations_last_updated(self.user_id)
 					print(f"Comparing conversation table dates local {d1} ({date_from_timestamp(d1)}), remote {d2} ({date_from_timestamp(d2)})")
-					if d1 != d2:
-						fbConversations = self.fb_mgr.get_conversation_toc()
+					fbConversations = self.fb_mgr.get_conversation_toc()
+					if d1 != d2 and self.fb_mgr.is_functional:
+						if (self.fb_mgr.encrypt_content and self.fb_mgr.encryption_pending):
+								Print("Encryption is pending.  Setting fbConversations to empty list to trigger re-write.")
+								fbConversations = []
 						sqlConversations = list(self.sql_mgr.get_all_conversations(self.user_id))
 						messagesFB = []
 						messagesSQL = []

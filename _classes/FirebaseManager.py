@@ -1,8 +1,14 @@
 import firebase_admin
-from firebase_admin import credentials, auth, firestore
+from flask import session 
+from firebase_admin import credentials, auth, firestore, initialize_app
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+import base64
+
 from _classes.Constants import *
 from _classes.Utility import *
 from _classes.DataClasses import *
+from _classes.Cryptography import *
 
 class FirebaseManager:
 	_instance = None
@@ -14,12 +20,16 @@ class FirebaseManager:
 	root_id = ""
 	usage_root_id = ""
 	device_root_id = ""
+	encrypt_content = True
+	encryption_pending = False
+	content_encryption_key = ""
+	encryption_test_content = "Today is a good day!"
 	fs_database = None
 	
-	def __new__(cls, *args, **kwargs):
-		if not cls._instance:
-			cls._instance = super().__new__(cls, *args, **kwargs)
-		return cls._instance
+	# def __new__(cls, *args, **kwargs):
+		# if not cls._instance:
+			# cls._instance = super().__new__(cls, *args, **kwargs)
+		# return cls._instance
 
 	def __init__(self):
 		if not self.is_initialized:
@@ -29,10 +39,11 @@ class FirebaseManager:
 
 	def initialize(self, use_google_auth):
 		if use_google_auth:
-			#val credential = GoogleAuthProvider.getCredential(idToken, null)
-			#auth.signInWithCredential(credential)
 			cred = credentials.Certificate(google_services)
 			firebase_admin.initialize_app(cred)
+			#print(f"Initializing with token: {id_token}")
+			#user = auth.verify_id_token(id_token)
+			#return f"Firebase UserID: {user['uid']}"
 			print(f"Firebase was authenticated automatically via Google")
 		else:
 			print("Firebase was not authenticated automatically...")
@@ -50,6 +61,24 @@ class FirebaseManager:
 			self.fs_database = firestore.client()
 		self.is_initialized = self.is_functional
 		
+#-------------------------------------------------- Device Management functions --------------------------------------------------
+	def distribute_api_keys():
+		cred = credentials.Certificate(google_services)
+		firebase_admin.initialize_app(cred)
+		db = firestore.client()
+		collection_a = db.collection(RegistrationTableName)
+		collection_b = db.collection(ActivatedDevicesTableName)
+		docs_a = collection_a.stream()
+		for doc_a in docs_a:
+			device_id = doc_a.id
+			public_key = doc_a.to_dict().get('publicKey', None)
+			if public_key:
+				encrypted_api_key = encrypt_string_rsa(openai_api_key, public_key)
+				#print(encrypted_api_key)
+				doc_b = collection_b.document(device_id).get().to_dict()
+				doc_b['apiKey'] = encrypted_api_key
+				collection_b.document(device_id).set(doc_b, merge=True)
+	
 	#-------------------------------------------------- Firebase essential functions  --------------------------------------------------
 	def generate_id(self, time_stamp=0, day_precision=False, base_id = ""):
 		if base_id == "": base_id = self.root_id
@@ -79,62 +108,6 @@ class FirebaseManager:
 			if x != "":
 				result.append(x)
 		return result
-
-	#-------------------------------------------------- device setup functions  --------------------------------------------------
-
-	def update_device_status(self):
-		device_model = "Webserver"  
-		data = {
-			"deviceModel": device_model,
-			"userID": self.user_id,
-			"timeStamp": get_current_timestamp()
-		}
-		document_ref = self.fs_database.collection(RegistrationTableName).document(self.device_root_id)
-		document_ref.set(data)
-		try:
-			document_ref.get().to_dict()  # This doesn't return anything specific in Python, so it might need to be modified as per your needs.
-		except Exception as e:
-			print(f"Error updating device registration: {self.device_root_id}", e)
-
-	def update_last_synced(self):
-		try:
-			document_ref = self.fs_database.collection(RegistrationTableName).document(self.device_root_id)
-			document_ref.update({"lastSynced": get_current_timestamp()})
-			document_ref.get().to_dict() 
-		except Exception as e:
-			print(f"Error updating last synced for device: {self.device_root_id}", e)
-
-	def activate_trial_license(self, device_root_id):
-		print(f"Activating trial license for device: {self.device_root_id}")
-		data = {
-			"subscriptionLevel": 1,
-			"useGoogleAuth": False,
-			"syncUsage": True,
-			"timeStamp": get_current_timestamp()
-		}
-		document_ref = self.fs_database.collection(ActivatedDevicesTableName).document(self.device_root_id)
-		document_ref.set(data)
-		try:
-			document_ref.get().to_dict()  # Similar to above, might need to be modified.
-		except Exception as e:
-			print("Error activating device", e)
-
-	def get_device_settings(self):
-		print(f"Reading device settings for {self.device_root_id}")
-		result = DeviceSettings()
-		document_ref = self.fs_database.collection(ActivatedDevicesTableName).document(self.device_root_id)
-		try:
-			document = document_ref.get().to_dict()
-			if document:
-				result = DeviceSettings(**document)
-		except Exception as e:
-			print(f"Unable to read device settings for {self.device_root_id}", e)
-		update_device_status()
-		if result.subscription_level == -100:
-			activate_trial_license(self.device_root_id)
-			result.subscription_level = 1
-		return result
-
 
 	#-------------------------------------------------- Firebase Sample Prompt Management  --------------------------------------------------
 
@@ -215,7 +188,7 @@ class FirebaseManager:
 				result = [int(item) for item in items]
 		except Exception as e:
 			print(f"Unable to read {DeletionsTableName} collection, disabling Firebase")
-			is_functional = False
+			self.is_functional = False
 		return result
 
 	def save_deleted_conversations(self, ids):
@@ -256,17 +229,21 @@ class FirebaseManager:
 				print(conversation.conversationID, conversation.dateModified)
 				conversation.title = document.get("title", "")
 				conversation.summary = document.get("summary")
+				if self.encrypt_content:
+					conversation.title = decrypt_string_aes(conversation.title, self.content_encryption_key)
+					conversation.summary = decrypt_string_aes(conversation.summary, self.content_encryption_key)               
 				items = self.get_document_items(document)
 				for item in items:
 					v = item.split("|")
+					if self.encrypt_content: v = decrypt_string_aes(item, self.content_encryption_key).split("|")
 					if len(v) == 3:
 						m = ChatMessageExtended(conversationID, v[1], v[2], int(v[0]))
 						messages.append(m)
 					else:
-						print(f"Malformed message in {conversationID}: {item[:30]}")
+						print(f"Malformed message in {conversationID}: {item[:50]}")
 		except Exception as e:
 			print(f"Unable to read conversation conversationID: {conversationID}, disabling Firebase", e)
-			is_functional = False
+			self.is_functional = False
 		return conversation, messages
 
 	def make_conversation_toc(self, conversations):
@@ -281,11 +258,13 @@ class FirebaseManager:
 			"title": "TOC",
 			"rootID": self.root_id
 		}
+		if (self.encrypt_content):
+			data["key"] = encrypt_string_aes(self.encryption_test_content, self.content_encryption_key)        
 		conversations.sort(key=lambda x: x.conversationID)
 		item_count = 0
 		for c in conversations:
 			c.title = c.title.replace("|", "")
-			c.summary = c.summary.replace("|", "")
+			if self.encrypt_content: c.title = encrypt_string_aes(c.title, self.content_encryption_key)
 			data[f"item{item_count}"] = f"{c.conversationID}|{timestamp_from_date(c.dateModified)}|{c.title[:25]}"
 			item_count += 1
 		data["itemCount"] = item_count
@@ -305,23 +284,80 @@ class FirebaseManager:
 	def get_conversation_toc(self):
 		document_id = f"{self.root_id}:TOC"
 		conversations = []
-		#try:
-		document = self.fs_database.collection(ConversationTableName).document(document_id).get().to_dict()
-		if document:
-			items = self.get_document_items(document)
-			for item in items:
-				v = item.split("|")
-				if len(v) == 3:
-					conversationID = int(v[0])
-					dateModified = int(v[1])
-					dateModified = date_from_timestamp(dateModified)
-					title_partial = v[2]
-					c = Conversation(conversationID, title_partial, "", True, self.user_id, dateModified, dateModified,dateModified)
-					conversations.append(c)
+		encryption_state_is_good = not self.encrypt_content
+		document_data = None
+		try:
+			document_data = self.fs_database.collection(ConversationTableName).document(document_id).get().to_dict()
+		except Exception as ex:
+			print(f"Unable to read TOC: {ex}")
+			# If the TOC fails to read, this will cause an upload of the full conversation list and re-creation of the TOC, due to the structure of the IDs items won't be duplicated
+		if document_data:
+			encryption_test = document_data.get("key", "")
+			if self.encrypt_content:
+				self.content_encryption_key = get_aes_certificate()	#This generates and saves if it doesnt' exist
+				print("Encryption is enabled.  Checking status...")
+				if encryption_test == "":
+					print("Content not yet encrypted. Setting encryptionPending.")
+					self.encryption_pending = True
 				else:
-					print(f"Malformed conversation from TOC in {item[:30]}")
-		#except Exception as e:
-		#	print("Unable to read TOC", e)
+					if self.content_encryption_key != "":
+						print("Content is encrypted.  Testing if my key matches.")
+						test = decrypt_string_aes(encryption_test, self.content_encryption_key)
+						if test == self.encryption_test_content:
+							print("Encryption state is good.  Clear to proceed.")
+							encryption_state_is_good = True
+						else:
+							print(f"Encryption test failed: {test}")
+						
+					key_transfer_requested_certificate = document_data.get("transferRequest", "")
+					if not encryption_state_is_good:
+						key_transfer_response = document_data.get("transferResponse", "")
+						if key_transfer_response != "" and key_transfer_requested_certificate == get_public_key_as_string():
+							print("Content is encrypted, checking the status of my key request.")
+							test_key = decrypt_string_rsa(key_transfer_response)
+							test = decrypt_string_aes(encryption_test, test_key)
+							if test == self.encryption_test_content:
+								print("Encryption state is good.  Clear to proceed.")
+								self.content_encryption_key = test_key
+								save_aes_certificate(test_key)
+								encryption_state_is_good = True
+							else:
+								print("Encryption test failed on received key.")
+								self.is_functional = False
+						else:
+							print("Content is encrypted and I don't have a valid key.  Requesting key transfer.")
+							document_data["transferRequest"] = get_public_key_as_string()
+							self.save_document(ConversationTableName, document_id, document_data)
+							self.is_functional = False   # If the encryption key doesn't match then we aren't functional
+							print("getConversationTOC, requested key transfer.")
+					else:
+						print("My encryption state is good.  Checking for transfer requests...")
+						if key_transfer_requested_certificate != "":
+							print(f"Sending response to: {key_transfer_requested_certificate}")
+							key_transfer_response = encrypt_string_rsa(self.content_encryption_key, key_transfer_requested_certificate)
+							print(f"My response: {key_transfer_response}")
+							document_data["transferResponse"] = key_transfer_response
+							self.save_document(ConversationTableName, document_id, document_data)
+							print("getConversationTOC, sent key.")
+			else:	#!self.encrypt_content
+				if encryption_test !="":
+					self.encryption_pending = False
+					self.encryption_state_is_good = False
+			if encryption_state_is_good:
+				items = self.get_document_items(document_data)
+				for item in items:
+					v = item.split("|")
+					if len(v) == 3 or (len(v) ==4 and self.encrypt_content):
+						conversationID = int(v[0])
+						dateModified = int(v[1])
+						dateModified = date_from_timestamp(dateModified)
+						title_partial = v[2]
+						if self.encrypt_content:
+							title_partial = v[2] + "|" + v[3]
+						c = Conversation(conversationID, title_partial, "", True, self.user_id, dateModified, dateModified,dateModified)
+						conversations.append(c)
+					else:
+						print(f"Malformed conversation from TOC in {item[:30]}")
 		return conversations
 
 	#-------------------------------------------------- Firebase ChatUsage Management  --------------------------------------------------
@@ -341,7 +377,7 @@ class FirebaseManager:
 			print(f"getUsageLastUpdated result {date_from_timestamp(max_time_stamp)}")
 		except Exception as e:
 			print(f"getUsageLastUpdated, unable to read {UsageTableName} collection, disabling Firebase", e)
-			is_functional = False
+			self.is_functional = False
 		return max_time_stamp
 
 	async def save_usage(self, usage):
@@ -385,11 +421,3 @@ class FirebaseManager:
 			lambda _: print(f"Conversation {conversationID} successfully deleted!")
 		)
 
-if __name__ == "__main__":
-	fb = FirebaseManager()
-	print("ID: ", fb.generate_id())
-	conversations = fb.get_conversation_toc()
-	for conversation in conversations:
-		print("Conversation:", conversation)
-		#messages = fb.get_conversation(conversation.conversationID)
-		#for message in messages: print("Message:", message)
