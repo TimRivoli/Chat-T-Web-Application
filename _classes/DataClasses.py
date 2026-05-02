@@ -1,4 +1,5 @@
 from enum import Enum
+from dataclasses import dataclass
 from _classes.Utility import *
 
 class ChatActivityType:
@@ -94,19 +95,80 @@ class Conversation:
 		return f"Conversation ID: {self.conversationID}, Title: {self.title[:35]}, Summary: {self.summary[:35]}, Saved: {self.saved}, User ID: {self.userID}, Date Created: {self.dateCreated}, Date Accessed: {self.dateAccessed}, Date Modified: {self.dateModified}"
 
 class DeviceSettings:
-	def __init__(self, deviceModel="", subscriptionLevel=-100, useGoogleAuth=False, syncConversations=False, syncUsage=True):
+	def __init__(self, deviceModel="", subscriptionLevel=-100, useGoogleAuth=False, syncConversations=False, syncUsage=True, apiKey=""):
 		self.deviceModel = deviceModel
 		self.subscriptionLevel = subscriptionLevel
 		self.useGoogleAuth = useGoogleAuth
 		self.syncConversations = syncConversations
 		self.syncUsage = syncUsage
+		self.apiKey = apiKey
 	def __str__(self):
-		return f"Device Model: {self.deviceModel}, Subscription Level: {self.subscriptionLevel}, Use Google Auth: {self.useGoogleAuth}, Sync Conversations: {self.syncConversations}, Sync Usage: {self.syncUsage}"
+		return f"Device Model: {self.deviceModel}, Subscription Level: {self.subscriptionLevel}, Use Google Auth: {self.useGoogleAuth}, Sync Conversations: {self.syncConversations}, Sync Usage: {self.syncUsage} apiKey: {self.apiKey}"
 
+@dataclass
 class SamplePrompt:
-	def __init__(self, activityName="Conversation", prompt="", timeStamp=0):
-		self.activityName = activityName
-		self.prompt = prompt
-		self.timeStamp = timeStamp
-	def __str__(self):
-		return f"Activity Name: {self.activityName}, Prompt: {self.prompt}, Timestamp: {self.timeStamp}"
+    activityName: str = "Conversation"
+    prompt: str = ""
+    timeStamp: int = 0   
+    def __str__(self):
+        return f"Activity Name: {self.activityName}, Prompt: {self.prompt}, Timestamp: {self.timeStamp}"
+		
+@dataclass
+class NoteEntry:
+    noteID: int = 0
+    categoryID: int = 0
+    categoryName: str = ""
+    title: str = ""
+    content: str = ""
+    dateCreated: datetime = get_current_date()
+    dateAccessed: datetime = get_current_date()
+    dateModified: datetime = get_current_date()
+
+@dataclass
+class NoteCategory:
+    categoryID: int = 0
+    categoryName: str = ""
+
+@dataclass
+class PriceWorkingSetEntry:
+    CompanyName: str = ""
+    Ticker: str = ""
+    Sector: str = ""
+    SP500Listed: bool = False
+    CurrentPrice: float = 0.0
+    Average_5Day: float = 0.0
+    Average_2Day: float = 0.0
+    PC_2Year: float = 0.0
+    PC_1Year: float = 0.0
+    PC_6Month: float = 0.0
+    PC_3Month: float = 0.0
+    PC_2Month: float = 0.0
+    PC_1Month: float = 0.0
+    PC_1Day: float = 0.0
+    Gain_Monthly: float = 0.0
+    LossStd_1Year: float = 0.0
+    Point_Value: int = 0
+    TargetHoldings: float = 0.0
+    Revenue: float = 0.0
+    NetIncome: float = 0.0
+    CompanySize: int = 0
+    MarketCap: float = 0.0
+    OperatingExpense: float = 0.0
+    NetProfitMargin: float = 0.0
+    EarningsPerShare: float = 0.0
+    CashShortTermInvestments: float = 0.0
+    TotalAssets: float = 0.0
+    TotalLiabilities: float = 0.0
+    NetWorth: float = 0.0
+    TotalEquity: float = 0.0
+    SharesOutstanding: float = 0.0
+    PriceToBook: float = 0.0
+    ReturnOnAssetts: float = 0.0
+    ReturnOnCapital: float = 0.0
+    CashFromOperations: float = 0.0
+    CashFromInvesting: float = 0.0
+    CashFromFinancing: float = 0.0
+    NetChangeInCash: float = 0.0
+    FreeCashFlow: float = 0.0
+    Comments: str = ""
+    LatestEntry: datetime = get_current_date()

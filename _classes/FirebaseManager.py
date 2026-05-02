@@ -26,10 +26,10 @@ class FirebaseManager:
 	encryption_test_content = "Today is a good day!"
 	fs_database = None
 	
-	# def __new__(cls, *args, **kwargs):
-		# if not cls._instance:
-			# cls._instance = super().__new__(cls, *args, **kwargs)
-		# return cls._instance
+	def __new__(cls, *args, **kwargs):
+		if not cls._instance:
+			cls._instance = super().__new__(cls, *args, **kwargs)
+		return cls._instance
 
 	def __init__(self):
 		if not self.is_initialized:
@@ -38,18 +38,17 @@ class FirebaseManager:
 			self.is_initialized = True
 
 	def initialize(self, use_google_auth):
-		if use_google_auth:
-			cred = credentials.Certificate(google_services)
-			firebase_admin.initialize_app(cred)
-			#print(f"Initializing with token: {id_token}")
-			#user = auth.verify_id_token(id_token)
-			#return f"Firebase UserID: {user['uid']}"
-			print(f"Firebase was authenticated automatically via Google")
-		else:
-			print("Firebase was not authenticated automatically...")
-			print("Firebase: Logging anonymously...")
-			firebase_admin.initialize_app()
-			print(f"Firebase: Logged in anonymously")
+		try:
+			if use_google_auth:
+				cred = credentials.Certificate(google_services)
+				firebase_admin.initialize_app(cred)
+				print("Firebase was authenticated automatically via Google")
+			else:
+				print("Firebase: Logging anonymously...")
+				firebase_admin.initialize_app()
+				print("Firebase: Logged in anonymously")
+		except ValueError:
+			print("Firebase already initialized, reusing existing app")
 
 		self.root_id = self.android_id
 		self.device_root_id = f"{self.android_id}:{self.device_id}"
@@ -384,7 +383,7 @@ class FirebaseManager:
 		update_count = 0
 		usage.sort(key=lambda x: x.time_stamp, reverse=True)
 		if usage:
-			last_updated = await get_usage_last_updated()
+			last_updated = get_usage_last_updated()
 			item_count = 0
 			stop_id = self.generate_id(last_updated, True, usage_root_id)
 			print(f"Usage sync {stop_id} {len(usage)} stop at {date_from_timestamp(last_updated)}")
@@ -417,7 +416,323 @@ class FirebaseManager:
 	def delete_conversation(self, conversationID):
 		document_id = self.generate_id(conversationID, False)
 		doc_ref = self.fs_database.collection(ConversationTableName).document(document_id)
-		doc_ref.delete().add_done_callback(
-			lambda _: print(f"Conversation {conversationID} successfully deleted!")
-		)
+		doc_ref.delete()
+		print(f"Conversation {conversationID} successfully deleted!")
+		
+
+	#-------------------------------------------------- Firebase Notes Management  --------------------------------------------------
+
+	def save_note(self, note):
+		document_id = self.generate_id(note.noteID, False)
+		data = {
+			"noteID": note.noteID,
+			"categoryID": note.categoryID,
+			"dateAccessed": note.dateAccessed,
+			"dateCreated": note.dateCreated,
+			"dateModified": note.dateModified
+		}
+		if self.encrypt_content:
+			data["title"] = encrypt_string_aes(note.title, self.content_encryption_key)
+			data["content"] = encrypt_string_aes(note.content, self.content_encryption_key)
+		else:
+			data["title"] = note.title
+			data["content"] = note.content
+		self.save_document(NotesTableName, document_id, data)
+
+	def get_note(self,noteID):
+		note = NoteEntry()
+		document_id = self.generate_id(noteID, False)
+		try:
+			document = None
+			document = self.fs_database.collection(NotesTableName).document(document_id).get().to_dict()
+			if document:
+				note.noteID = document.get("noteID", noteID)
+				note.categoryID = document.get("categoryID", 0)
+				note.dateAccessed = document.get("dateAccessed", default_timestamp)
+				note.dateCreated = document.get("dateCreated", default_timestamp)
+				note.dateModified = document.get("dateModified", default_timestamp)
+				note.title = document.get("title", "")
+				note.content = document.get("content", "")
+				if self.encrypt_content:
+					note.title = decrypt_string_aes(note.title, self.content_encryption_key)
+					note.content = decrypt_string_aes(note.content, self.content_encryption_key)
+		except Exception as e:
+			print(f"Unable to read note noteID: {noteID}, disabling Firebase", e)
+			isFunctional = False
+		return note
+
+	def make_notes_toc(self,notes):
+		last_updated = default_timestamp
+		for n in notes:
+			if timestamp_from_date(n.dateModified) > last_updated:
+				last_updated = timestamp_from_date(n.dateModified)
+
+		document_id = f"{self.root_id}:TOC"
+		data = {
+			"dateCreated": last_updated,
+			"title": "TOC",
+			"rootID": self.root_id
+		}
+		notes.sort(key=lambda x: x.noteID)
+		item_count = 0
+		for c in notes:
+			title = c.title[:25].replace("|", "")
+			if self.encrypt_content:
+				title = encrypt_string_aes(title, self.content_encryption_key)
+			data[f"item{item_count}"] = f"{c.noteID}|{timestamp_from_date(c.dateModified)}|{title}"
+			item_count += 1
+		data["itemCount"] = item_count
+		print(f"Creating new Notes TOC, entries: {item_count}, latestEntry: {last_updated} TOCID: {document_id}")
+		self.save_document(NotesTableName, document_id, data)
+
+	def get_notes_toc_last_updated(self):
+		document_id = f"{self.root_id}:TOC"
+		max_time_stamp = 0
+		try:
+			document = None
+			document = self.fs_database.collection(NotesTableName).document(document_id).get().to_dict()
+			if document:
+				max_time_stamp = document.get("dateCreated")
+		except Exception as e:
+			print(f"Unable to read latest dateCreated from {NotesTableName} TOC", e)
+		return max_time_stamp
+
+	def get_notes_toc(self):
+		print("getNoteEntryTOC")
+		document_id = f"{self.root_id}:TOC"
+		notes = []
+		try:
+			document = self.fs_database.collection(NotesTableName).document(document_id).get().to_dict()
+			if document:
+				print("getting note TOC items")
+				items = self.get_document_items(document)
+				print(len(items), "items found")
+				for item in items:
+					v = item.split("|")
+					if len(v) == 3 or (len(v) == 4 and self.encrypt_content):
+						noteID = int(v[0])
+						dateModified = int(v[1])
+						title_partial = v[2]
+						if self.encrypt_content:
+							title_partial = v[2] + "|" + v[3]
+							title_partial = decrypt_string_aes(title_partial, self.content_encryption_key)
+						#print(noteID, title_partial, dateModified)
+						c = NoteEntry(noteID, 0, "", title_partial, "", date_from_timestamp(dateModified), date_from_timestamp(dateModified), date_from_timestamp(dateModified))
+						notes.append(c)
+					else:
+						print("Malformed note from TOC size:", len(v), "content", item)
+		except Exception as e:
+			print("Unable to read TOC", e)
+			#If the TOC fails to read, this will cause an upload of the full note list and re-creation of the TOC, due to the structure of the IDs items won't be duplicated.
+		print(len(notes), "items parsed from TOC")
+		return notes
+
+	def save_note_categories(self, categories):
+		document_id = f"{self.root_id}:CATS"
+		data = {"itemCount": len(categories)}
+		for i, c in enumerate(categories):
+			data[f"item{i}"] = f"{c.categoryID}|{c.categoryName}"
+		self.save_document(NotesCategoryTableName, document_id, data)
+
+	def get_note_categories(self):
+		document_id = f"{self.root_id}:CATS"
+		categories = []
+		try:
+			document = self.fs_database.collection(NotesCategoryTableName).document(document_id).get().to_dict()
+			if document:
+				items = self.get_document_items(document)
+				for item in items:
+					v = item.split("|", 1)
+					if len(v) == 2:
+						categories.append(NoteCategory(int(v[0]), v[1]))
+		except Exception as e:
+			print(f"Unable to read note categories from Firebase: {e}")
+		return categories
+
+	def delete_note(self,noteID):
+		document_id = self.generate_id(noteID, False)
+		doc_ref = self.fs_database.collection(NotesTableName).document(document_id)
+		doc_ref.delete()
+
+	def get_deleted_notes(self):
+		result = []
+		try:
+			document = self.fs_database.collection(NotesDeletionsTableName).document(self.user_id).get()
+			if document.exists:
+				items = self.get_document_items(document)
+				result = [int(item) for item in items]
+		except Exception as e:
+			print(f"Unable to read {NotesDeletionsTableName} collection, disabling Firebase. Reason: {e}")
+			isFunctional = False
+		return result
+
+	def save_deleted_notes(self,ids):
+		timestamp = get_current_timestamp()
+		data = {
+			"timeStamp": timestamp,
+			"itemCount": len(ids)
+		}
+		for i, id_ in enumerate(ids):
+			data[f"item{i}"] = id_
+		self.save_document(NotesDeletionsTableName, self.user_id, data)
+
+	#-------------------------------------------------- Firebase Prices Working Set Management  --------------------------------------------------
+
+	def save_price_working_set_entry(self, entry):
+		document_id = f"{self.root_id}:{entry.Ticker}"
+		data = {
+			"CompanyName": entry.CompanyName,
+			"Ticker": entry.Ticker,
+			"Sector": entry.Sector,
+			"SP500Listed": entry.SP500Listed,
+			"CurrentPrice": float(entry.CurrentPrice),
+			"Average_5Day": entry.Average_5Day,
+			"Average_2Day": entry.Average_2Day,
+			"PC_2Year": entry.PC_2Year,
+			"PC_1Year": entry.PC_1Year,
+			"PC_6Month": entry.PC_6Month,
+			"PC_3Month": entry.PC_3Month,
+			"PC_2Month": entry.PC_2Month,
+			"PC_1Month": entry.PC_1Month,
+			"PC_1Day": entry.PC_1Day,
+			"Gain_Monthly": entry.Gain_Monthly,
+			"LossStd_1Year": entry.LossStd_1Year,
+			"Point_Value": entry.Point_Value,
+			"TargetHoldings": float(entry.TargetHoldings),
+			"Revenue": entry.Revenue,
+			"NetIncome": entry.NetIncome,
+			"CompanySize": entry.CompanySize,
+			"MarketCap": float(entry.MarketCap),
+			"OperatingExpense": entry.OperatingExpense,
+			"NetProfitMargin": entry.NetProfitMargin,
+			"EarningsPerShare": entry.EarningsPerShare,
+			"CashShortTermInvestments": entry.CashShortTermInvestments,
+			"TotalAssets": entry.TotalAssets,
+			"TotalLiabilities": entry.TotalLiabilities,
+			"NetWorth": entry.NetWorth,
+			"TotalEquity": entry.TotalEquity,
+			"SharesOutstanding": entry.SharesOutstanding,
+			"PriceToBook": entry.PriceToBook,
+			"ReturnOnAssetts": entry.ReturnOnAssetts,
+			"ReturnOnCapital": entry.ReturnOnCapital,
+			"CashFromOperations": entry.CashFromOperations,
+			"CashFromInvesting": entry.CashFromInvesting,
+			"CashFromFinancing": entry.CashFromFinancing,
+			"NetChangeInCash": entry.NetChangeInCash,
+			"FreeCashFlow": entry.FreeCashFlow,
+			"LatestEntry": timestamp_from_date(entry.LatestEntry)
+		}
+		if self.encrypt_content:
+			data["Comments"] = encrypt_string_aes(entry.Comments, self.content_encryption_key)
+		else:
+			data["Comments"] = entry.Comments
+		self.save_document(PricesWorkingSetTableName, document_id, data)
+
+	def get_price_working_set_entry(self, ticker):
+		entry = PriceWorkingSetEntry()
+		document_id = f"{self.root_id}:{ticker}"
+		try:
+			document = self.fs_database.collection(PricesWorkingSetTableName).document(document_id).get().to_dict()
+			if document:
+				entry.CompanyName = document.get("CompanyName", "")
+				entry.Ticker = document.get("Ticker", ticker)
+				entry.Sector = document.get("Sector", "")
+				entry.SP500Listed = bool(document.get("SP500Listed", False))
+				entry.CurrentPrice = document.get("CurrentPrice", 0.0)
+				entry.Average_5Day = document.get("Average_5Day", 0.0)
+				entry.Average_2Day = document.get("Average_2Day", 0.0)
+				entry.PC_2Year = document.get("PC_2Year", 0.0)
+				entry.PC_1Year = document.get("PC_1Year", 0.0)
+				entry.PC_6Month = document.get("PC_6Month", 0.0)
+				entry.PC_3Month = document.get("PC_3Month", 0.0)
+				entry.PC_2Month = document.get("PC_2Month", 0.0)
+				entry.PC_1Month = document.get("PC_1Month", 0.0)
+				entry.PC_1Day = document.get("PC_1Day", 0.0)
+				entry.Gain_Monthly = document.get("Gain_Monthly", 0.0)
+				entry.LossStd_1Year = document.get("LossStd_1Year", 0.0)
+				entry.Point_Value = document.get("Point_Value", 0)
+				entry.TargetHoldings = document.get("TargetHoldings", 0.0)
+				entry.Revenue = document.get("Revenue", 0.0)
+				entry.NetIncome = document.get("NetIncome", 0.0)
+				entry.CompanySize = document.get("CompanySize", 0)
+				entry.MarketCap = document.get("MarketCap", 0.0)
+				entry.OperatingExpense = document.get("OperatingExpense", 0.0)
+				entry.NetProfitMargin = document.get("NetProfitMargin", 0.0)
+				entry.EarningsPerShare = document.get("EarningsPerShare", 0.0)
+				entry.CashShortTermInvestments = document.get("CashShortTermInvestments", 0.0)
+				entry.TotalAssets = document.get("TotalAssets", 0.0)
+				entry.TotalLiabilities = document.get("TotalLiabilities", 0.0)
+				entry.NetWorth = document.get("NetWorth", 0.0)
+				entry.TotalEquity = document.get("TotalEquity", 0.0)
+				entry.SharesOutstanding = document.get("SharesOutstanding", 0.0)
+				entry.PriceToBook = document.get("PriceToBook", 0.0)
+				entry.ReturnOnAssetts = document.get("ReturnOnAssetts", 0.0)
+				entry.ReturnOnCapital = document.get("ReturnOnCapital", 0.0)
+				entry.CashFromOperations = document.get("CashFromOperations", 0.0)
+				entry.CashFromInvesting = document.get("CashFromInvesting", 0.0)
+				entry.CashFromFinancing = document.get("CashFromFinancing", 0.0)
+				entry.NetChangeInCash = document.get("NetChangeInCash", 0.0)
+				entry.FreeCashFlow = document.get("FreeCashFlow", 0.0)
+				entry.Comments = document.get("Comments", "")
+				entry.LatestEntry = date_from_timestamp(document.get("LatestEntry", default_timestamp))
+				if self.encrypt_content:
+					entry.Comments = decrypt_string_aes(entry.Comments, self.content_encryption_key)
+		except Exception as e:
+			print(f"Unable to read price working set entry {ticker}: {e}")
+		return entry
+
+	def make_prices_working_set_toc(self, entries):
+		last_updated = default_timestamp
+		for e in entries:
+			ts = timestamp_from_date(e.LatestEntry)
+			if ts > last_updated:
+				last_updated = ts
+		document_id = f"{self.root_id}:PRICETOC"
+		data = {
+			"dateCreated": last_updated,
+			"title": "PRICETOC",
+			"rootID": self.root_id
+		}
+		entries.sort(key=lambda x: x.Ticker)
+		item_count = 0
+		for e in entries:
+			data[f"item{item_count}"] = f"{e.Ticker}|{timestamp_from_date(e.LatestEntry)}"
+			item_count += 1
+		data["itemCount"] = item_count
+		print(f"Creating new Prices Working Set TOC, entries: {item_count}, latestEntry: {last_updated}")
+		self.save_document(PricesWorkingSetTableName, document_id, data)
+
+	def get_prices_working_set_toc_last_updated(self):
+		document_id = f"{self.root_id}:PRICETOC"
+		max_time_stamp = 0
+		try:
+			document = self.fs_database.collection(PricesWorkingSetTableName).document(document_id).get().to_dict()
+			if document:
+				max_time_stamp = document.get("dateCreated", 0)
+		except Exception as e:
+			print(f"Unable to read latest dateCreated from {PricesWorkingSetTableName} TOC: {e}")
+		return max_time_stamp
+
+	def get_prices_working_set_toc(self):
+		print("getPricesWorkingSetTOC")
+		document_id = f"{self.root_id}:PRICETOC"
+		entries = []
+		try:
+			document = self.fs_database.collection(PricesWorkingSetTableName).document(document_id).get().to_dict()
+			if document:
+				items = self.get_document_items(document)
+				for item in items:
+					v = item.split("|")
+					if len(v) == 2:
+						e = PriceWorkingSetEntry()
+						e.Ticker = v[0]
+						e.LatestEntry = date_from_timestamp(int(v[1]))
+						entries.append(e)
+					else:
+						print(f"Malformed price working set entry from TOC: {item}")
+		except Exception as e:
+			print(f"Unable to read prices working set TOC: {e}")
+		print(f"{len(entries)} items parsed from prices working set TOC")
+		return entries
+
 

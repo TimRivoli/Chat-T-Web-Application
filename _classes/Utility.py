@@ -1,12 +1,13 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 #Note on time: Python supports date from seconds, Kotlin supports time from millis, so the firebase timestamps are saved in millis which need to be translated for Python losing <1 sec precision
 #This is going to present an issue whenever timestamps are converted to dates and back
 #To simply all date and timestamp conversions go through here
+#1/6/2026: Noticed FB is storing UTC dates, whereas SQL is using PST.  Changed to datetime.now(timezone.utc)
 
 default_timestamp = 946684800000  #1/1/2000 in millis
-def get_current_date(): return datetime.now()
-def get_current_timestamp(): return int(datetime.now().timestamp()) * 1000
+def get_current_date(): return datetime.now(timezone.utc)
+def get_current_timestamp(): return int(datetime.now(timezone.utc).timestamp()) * 1000
 def date_from_timestamp(timestamp_in_millis): return datetime.fromtimestamp(int(timestamp_in_millis/1000))
 def timestamp_from_date(date): return int(date.timestamp()) * 1000
 def timestamp_trim_to_day(timestamp_in_millis):

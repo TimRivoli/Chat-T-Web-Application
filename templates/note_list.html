@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notes</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div id="chat-container">
+        <div id="buttons-container">
+            <div>
+                <label for="category-filter">Category:</label>
+                <select id="category-filter">
+                    <option value="">All</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.categoryID }}">{{ cat.categoryName }}</option>
+                    {% endfor %}
+                </select>
+                <input type="text" id="search-box" placeholder="Search..." style="padding:8px; border:1px solid #ccc; border-radius:5px;">
+            </div>
+            <div>
+                <button class="button" id="new-note-button">New Note</button>
+                <button class="button" id="chat-button">Chat</button>
+            </div>
+        </div>
+
+        <div id="sync-banner" class="hidden">
+            <span id="sync-message"></span>
+            <button id="sync-dismiss" onclick="document.getElementById('sync-banner').classList.add('hidden')">&#x2715;</button>
+        </div>
+
+        <div id="note-list">
+        {% for note in notes %}
+            <div class="note-container" data-category="{{ note.categoryID }}" data-title="{{ note.title|lower }}">
+                <div class="note-title" data-id="{{ note.noteID }}">
+                    <span class="note-category-badge">{{ note.categoryName }}</span>
+                    {{ note.title }}
+                    <span class="note-date">{{ note.dateModified.strftime('%Y-%m-%d') }}</span>
+                </div>
+                <div class="note-content hidden" id="content-{{ note.noteID }}">
+                    {{ note.content|safe }}
+                    <div class="note-actions">
+                        <button class="button edit-button" data-id="{{ note.noteID }}">Edit</button>
+                        <button class="button delete-button" data-id="{{ note.noteID }}" style="background-color:#dc3545;">Delete</button>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    </div>
+    <script src="{{ url_for('static', filename='note_list.js') }}"></script>
+    <script src="{{ url_for('static', filename='sync_status.js') }}"></script>
+</body>
+</html>

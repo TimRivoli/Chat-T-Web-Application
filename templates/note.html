@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Note</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div id="chat-container">
+        <div id="buttons-container">
+            <div>
+                <button class="button" id="notelist-button">&#8592; Notes</button>
+            </div>
+            <div>
+                {% if note.noteID %}
+                <button class="button" id="delete-button" data-id="{{ note.noteID }}" style="background-color:#dc3545;">Delete</button>
+                {% endif %}
+            </div>
+        </div>
+
+        <form id="note-form" action="/note/save" method="post">
+            <input type="hidden" name="note_id" value="{{ note.noteID }}">
+            <div id="user-input-container" style="margin-bottom:10px;">
+                <input type="text" name="title" id="note-title" placeholder="Title..." value="{{ note.title }}" style="flex-grow:1; padding:10px; border:1px solid #ccc; border-radius:5px;">
+                <select name="category_id" id="note-category" style="padding:10px; border:1px solid #ccc; border-radius:5px; margin-left:5px;">
+                    {% for cat in categories %}
+                    <option value="{{ cat.categoryID }}" {% if cat.categoryID == note.categoryID %}selected{% endif %}>{{ cat.categoryName }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <textarea name="content" id="note-content" placeholder="Write your note here..." rows="20" style="width:100%; padding:10px; border:1px solid #ccc; border-radius:5px; box-sizing:border-box; font-family:Arial,sans-serif; font-size:14px; resize:vertical;">{{ note.content }}</textarea>
+            <div style="margin-top:10px;">
+                <button type="submit" class="button">Save</button>
+            </div>
+        </form>
+    </div>
+    <script src="{{ url_for('static', filename='note.js') }}"></script>
+</body>
+</html>

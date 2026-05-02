@@ -2,6 +2,7 @@ from _classes.Constants import firebase_user_ID
 from _classes.DataClasses import *
 from _classes.SQLManager import SQLManager
 from _classes.FirebaseManager import FirebaseManager
+import threading
 
 class StorageManager:
 	TAG = "StorageManager"
@@ -17,13 +18,9 @@ class StorageManager:
 	last_synced = 0
 	webClientID = ""
 	sync_cooldown = 83333  # milliseconds = 5 min
+	sync_status = "Idle"
 	sql_mgr = None
 	fb_mgr = None
-
-	# def __new__(self, *args, **kwargs):
-		# if not self._instance:
-			# self._instance = super().__new__(self, *args, **kwargs)
-		# return self._instance
 
 	def __init__(self):
 		print("Initializing StorageManager")
@@ -34,13 +31,12 @@ class StorageManager:
 			#self.fb_mgr.initialize(self.use_google_auth)
 			#self.download_registered_device_settings()
 			if self.subscription_level > 0:
-				self.sync_databases()	
+				thread = threading.Thread(target=self.sync_databases, daemon=True)
+				thread.start()
 
 	def shut_down(self):
 		self.sql_mgr.shut_down()
 		self.sql_mgr = None
-		#self.fb_mgr.shut_down()
-		#self.fb_mgr = None
 
 #----------------------------------------------------------------------- Utility ------------------------------------------------------
 
@@ -75,8 +71,9 @@ class StorageManager:
 
 	def get_conversation(self, conversationID):
 		conversation = self.sql_mgr.get_conversation(conversationID, self.user_id)
-		conversation.dateAccessed = get_current_date()  # Update here rather than sqLiteManager to differentiate admin operations (sync) from user operations
-		self.sql_mgr.update_conversation_dates(conversation)
+		if conversation:
+			conversation.dateAccessed = get_current_date()
+			self.sql_mgr.update_conversation_dates(conversation)
 		return conversation
 
 	def get_conversation_usage(self, conversationID):
@@ -112,7 +109,61 @@ class StorageManager:
 	def delete_message(self, message):
 		self.sync_needed = True
 		self.sql_mgr.delete_message(message)
-		self.sql_mgr.update_conversation_modified(ChatManager.conversation)
+		self.sql_mgr.touch_conversation(message.conversationID)
+
+#---------------------------------------------------------------- Notes ------------------------------------------------------
+
+	def get_notes(self, categoryID=-1, search_string=""):
+		return self.sql_mgr.get_notes(categoryID, search_string)
+
+	def get_note(self, noteID):
+		note = self.sql_mgr.get_note(noteID)
+		note.dateAccessed =  get_current_date() # Update here rather than sqLiteManager to differentiate admin operations (sync) from user operations
+		self.sql_mgr.update_note_dates(note)
+		return note
+
+	def save_note(self, note):
+		print("Saving note:", note.noteID)
+		sync_needed = True
+		note.dateModified = get_current_date()
+		note.dateAccessed = get_current_date()
+		self.sql_mgr.save_note(note)
+
+	def delete_note(self, noteID):
+		sync_needed = True
+		self.sql_mgr.delete_note(noteID)
+
+	def get_note_category_id(self, category_name=""):
+		return self.sql_mgr.get_note_category_id(category_name)
+
+	def get_note_category_name(self, category_id):
+		return self.sql_mgr.get_note_category_name(category_id)
+
+	def get_note_categories(self):
+		return self.sql_mgr.get_note_categories()
+
+	def get_note_category_objects(self):
+		return self.sql_mgr.get_note_category_objects()
+
+	def create_note_category(self, categoryName):
+		sync_needed = True
+		self.sql_mgr.create_note_category(categoryName)
+
+	def delete_note_category(self, categoryID):
+		sync_needed = True
+		self.sql_mgr.delete_note_category(categoryID)
+
+#---------------------------------------------------------------- Prices Working Set ------------------------------------------------------
+
+	def get_prices_working_set(self):
+		return self.sql_mgr.get_prices_working_set()
+
+	def get_price_working_set_entry(self, ticker):
+		return self.sql_mgr.get_price_working_set_entry(ticker)
+
+	def save_price_working_set_entry(self, entry):
+		self.sync_needed = True
+		self.sql_mgr.save_price_working_set_entry(entry)
 
 #---------------------------------------------------------------- Usage ------------------------------------------------------
 	def append_usage(self, usage):
@@ -127,17 +178,181 @@ class StorageManager:
 		self.sql_mgr.append_sample_prompt(prompt)
 
 #------------------------------------------------------------------- Sync ------------------------------------------------------
+	def sync_note_categories(self):
+		fb_categories = self.fb_mgr.get_note_categories()
+		sql_categories = self.sql_mgr.get_note_category_objects()
+		sql_ids = {c.categoryID for c in sql_categories}
+		fb_ids = {c.categoryID for c in fb_categories}
+		changed = False
+		for c in fb_categories:
+			if c.categoryID not in sql_ids:
+				print(f"Adding category from Firebase to SQL: {c.categoryID} {c.categoryName}")
+				self.sql_mgr.create_note_category(c.categoryName, c.categoryID)
+				self.sql_mgr.note_categories = []
+				changed = True
+		for c in sql_categories:
+			if c.categoryID not in fb_ids:
+				changed = True
+		if changed or len(fb_categories) == 0:
+			sql_categories = self.sql_mgr.get_note_category_objects()
+			print(f"Updating Firebase note categories: {len(sql_categories)}")
+			self.fb_mgr.save_note_categories(sql_categories)
+
+	def sync_notes(self):
+		self.sync_note_categories()
+		updates = 0
+		deletions = 0
+		additions = 0
+		fb_note_last_updated = self.fb_mgr.get_notes_toc_last_updated()
+		sql_notes_last_updated = self.sql_mgr.get_notes_last_updated()
+		print(f"Comparing notes table dates local {sql_notes_last_updated} , remote {fb_note_last_updated}")
+		print(f"Comparing notes table dates local {sql_notes_last_updated} ({date_from_timestamp(sql_notes_last_updated)}), remote {fb_note_last_updated} ({date_from_timestamp(fb_note_last_updated)})")
+		fb_notes = self.fb_mgr.get_notes_toc()
+		if sql_notes_last_updated != fb_note_last_updated:
+			print("Notes sync needed")
+			sql_notes = self.sql_mgr.get_notes()
+			print("Firebase notes: ", len(fb_notes))
+			print("SQL notes", len(sql_notes))
+
+			#if len(sql_notes) < 10: assert(False)
+			# Sync deletions
+			print(" Deleting SQL notes... found in deletions collection...")
+			deleted_items = self.fb_mgr.get_deleted_notes()
+			for n in sql_notes:
+				if n.noteID in deleted_items:
+					self.sql_mgr.delete_note(n.noteID)
+					print(f"Deleting {n.noteID}")
+					n.noteID = -1
+					deletions += 1
+
+			print(" Deleting firebase notes... found in deletions collection...")
+			deleted_items = self.sql_mgr.get_deleted_notes()
+			for n in fb_notes:
+				if n.noteID in deleted_items:
+					self.fb_mgr.delete_note(n.noteID)
+					print(f"Deleting {n.noteID}")
+					n.noteID = -1
+					deletions += 1
+			self.fb_mgr.save_deleted_notes(deleted_items)
+
+			# Sync matches
+			print(" Synchronizing matched items")
+			note_ids = [n.noteID for n in fb_notes]
+			for n in sql_notes:
+				if n.noteID > 0 and n.noteID in note_ids:
+					for nn in fb_notes:
+						if n.noteID == nn.noteID:
+							print(f"FB: {nn.dateModified} vs SQL: {n.dateModified}")
+							if nn.dateModified > n.dateModified:
+								found_note = self.fb_mgr.get_note(n.noteID)
+								print(f" Firebase is newer, save to SQL {n.noteID}: {n.title}")
+								print(f"{found_note.dateModified}")
+								self.sql_mgr.save_note(found_note)
+								updates += 1
+							elif nn.dateModified < n.dateModified:
+								print(f" SQL is newer, save to Firebase {n.noteID}: {n.title}")
+								self.fb_mgr.save_note(n)
+								updates += 1
+
+			# Sync missing up
+			print(" Synchronizing missing notes up to Firebase")
+			for n in sql_notes:
+				if n.noteID > 0 and n.noteID not in note_ids:
+					print(f" Saving to Firebase {n.noteID}: {n.title}")
+					self.fb_mgr.save_note(n)
+					additions += 1
+
+			# Sync missing down
+			print(" Synchronizing missing notes down to SQL")
+			note_ids = [n.noteID for n in sql_notes]
+			for n in fb_notes:
+				if n.noteID > 0 and n.noteID not in note_ids:
+					found_note = self.fb_mgr.get_note(n.noteID)
+					print(f" Saving to SQL {found_note.noteID}: {found_note.title}")
+					if found_note.noteID != n.noteID: assert(False)
+						
+					self.sql_mgr.save_note(found_note)
+					additions += 1
+
+			if additions + updates > 0 and self.fb_mgr.is_functional:
+				sql_notes = self.sql_mgr.get_notes()
+				print("Updating Firebase Notes TOC")
+				self.fb_mgr.make_notes_toc(sql_notes)
+
+		print(f"Sync Notes Completed. Additions: {additions} Updates: {updates}  Deletions: {deletions}")
+
+	def sync_prices_working_set(self):
+		updates = 0
+		additions = 0
+		fb_last_updated = self.fb_mgr.get_prices_working_set_toc_last_updated()
+		sql_last_updated = self.sql_mgr.get_prices_working_set_last_updated()
+		print(f"Comparing prices_working_set dates local {sql_last_updated}, remote {fb_last_updated}")
+		fb_entries = self.fb_mgr.get_prices_working_set_toc()
+		if sql_last_updated != fb_last_updated:
+			print("Prices working set sync needed")
+			sql_entries = self.sql_mgr.get_prices_working_set()
+			print(f"Firebase entries: {len(fb_entries)}")
+			print(f"SQL entries: {len(sql_entries)}")
+
+			# Sync matches
+			print(" Synchronizing matched items")
+			fb_tickers = [e.Ticker for e in fb_entries]
+			for e in sql_entries:
+				if e.Ticker and e.Ticker in fb_tickers:
+					for fe in fb_entries:
+						if e.Ticker == fe.Ticker:
+							sql_ts = timestamp_from_date(e.LatestEntry)
+							fb_ts = timestamp_from_date(fe.LatestEntry)
+							if fb_ts > sql_ts:
+								found_entry = self.fb_mgr.get_price_working_set_entry(e.Ticker)
+								print(f" Firebase is newer, save to SQL: {e.Ticker}")
+								self.sql_mgr.save_price_working_set_entry(found_entry)
+								updates += 1
+							elif fb_ts < sql_ts:
+								print(f" SQL is newer, save to Firebase: {e.Ticker}")
+								self.fb_mgr.save_price_working_set_entry(e)
+								updates += 1
+							break
+
+			# Sync missing up
+			print(" Synchronizing missing entries up to Firebase")
+			for e in sql_entries:
+				if e.Ticker and e.Ticker not in fb_tickers:
+					print(f" Saving to Firebase: {e.Ticker}")
+					self.fb_mgr.save_price_working_set_entry(e)
+					additions += 1
+
+			# Sync missing down
+			print(" Synchronizing missing entries down to SQL")
+			sql_tickers = [e.Ticker for e in sql_entries]
+			for fe in fb_entries:
+				if fe.Ticker and fe.Ticker not in sql_tickers:
+					found_entry = self.fb_mgr.get_price_working_set_entry(fe.Ticker)
+					print(f" Saving to SQL: {found_entry.Ticker}")
+					self.sql_mgr.save_price_working_set_entry(found_entry)
+					additions += 1
+
+			if additions + updates > 0 and self.fb_mgr.is_functional:
+				sql_entries = self.sql_mgr.get_prices_working_set()
+				print("Updating Firebase Prices Working Set TOC")
+				self.fb_mgr.make_prices_working_set_toc(sql_entries)
+
+		print(f"Sync Prices Working Set Completed. Additions: {additions} Updates: {updates}")
+
 	def sync_databases(self):
 		sync_conversations_down = self.sync_conversations
 		sync_conversations_up = self.sync_conversations
-		TOCRefreshNeeded = False
+		TOCRefreshNeeded = False		
 		timeSinceLastSync = get_current_timestamp() - self.last_synced
-		# self.sql_mgr.applyFixes(self.user_id, self.android_id)
+		print(" Checking if sync needed...")
+		#self.sql_mgr.apply_updates()
 		if self.fb_mgr.is_functional and not self.sync_in_progress:
 			if not self.sync_needed or timeSinceLastSync <= self.sync_cooldown:
 				print(f"Sync is not needed or on cooldown. Needed: {self.sync_needed} Cooldown: {timeSinceLastSync}")
 			else:
-				self.sync_in_progress = True   # Prevent concurrent syncs
+				print(" Running database sync...")
+				self.sync_in_progress = True
+				self.sync_status = "Syncing..."
 				conversationUpdates = 0
 				messageUpdates = 0
 				usageUpdates = 0
@@ -164,6 +379,7 @@ class StorageManager:
 						self.sql_mgr.clean_sample_prompts()
 
 				# ------------------------------ Conversation updates  -----------------------------------------
+				self.sync_status = "Syncing conversations..."
 				d2 = self.fb_mgr.get_conversation_toc_last_updated()
 				if self.sync_conversations and self.fb_mgr.is_functional:
 					d1 = self.sql_mgr.get_conversations_last_updated(self.user_id)
@@ -296,9 +512,15 @@ class StorageManager:
 							sqlConversations = list(self.sql_mgr.get_all_conversations(self.user_id))
 							print("Updating Firebase TOC")
 							self.fb_mgr.make_conversation_toc(sqlConversations)
+						
+				self.sync_status = "Syncing notes..."
+				self.sync_notes()
+
+				self.sync_status = "Syncing prices working set..."
+				self.sync_prices_working_set()
 
 				print("Database sync completed")
-				self.last_synced = datetime.now().timestamp() * 1000
-				#self.fb_mgr.update_last_synced()
+				self.last_synced = get_current_date()
 				self.sync_needed = False
 				self.sync_in_progress = False
+				self.sync_status = "Idle"

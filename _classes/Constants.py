@@ -1,17 +1,31 @@
-openai_api_key = "<enter your key here>"
-google_api_key = "<enter your key here>"
-google_client_id = "<enter your key here>"
-google_client_secret = "<enter your key here>"
-google_services = "static\google-services.json" #You will need to setup a Google API account and register your application
-firebase_user_ID = "" #This should be loaded through OAuth/Firebase, haven't gotten there yet.
+import configparser, os
 
-ConversationTableName = "conversations"
-DeletionsTableName = "conversations_deleted"
-MessageTableName = "messages"
-UsageTableName = "usage"
+_config = configparser.ConfigParser()
+_config.read(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config.ini'))
+
+openai_api_key    = _config['openai']['api_key']
+google_api_key    = _config['google']['api_key']
+google_client_id  = _config['google']['client_id']
+google_client_secret = _config['google']['client_secret']
+firebase_user_ID  = _config['firebase']['user_id']
+google_services   = "static/google-services.json"
+
+DatabaseServer = "localhost"
+DatabaseName   = "ChatDatabase"
+
+ConversationTableName    = "conversations"
+DeletionsTableName       = "conversations_deleted"
+MessageTableName         = "messages"
+UsageTableName           = "usage"
 ActivatedDevicesTableName = "devices_activated"
-RegistrationTableName = "devices_registration"
-SamplePromptTableName = "sample_prompts"
+RegistrationTableName    = "devices_registration"
+SamplePromptTableName    = "sample_prompts"
+NotesTableName           = "notes"
+NotesCategoryTableName   = "notes_categories"
+NotesDeletionsTableName  = "notes_deleted"
+PricesWorkingSetTableName = "prices_working_set"
 
-defaultModel = "gpt-3.5-turbo"
-enhancedModel = "gpt-4"
+defaultModel  = "gpt-4o-mini"
+enhancedModel = "gpt-4.1"
+enhancedModel2 = "gpt-4o"
+enhancedModel3 = "gpt-4.1-mini"

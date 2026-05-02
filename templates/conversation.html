@@ -10,6 +10,18 @@
             <div>
 				<label for="response-size">Response size:</label>
 				<select id="response-size"> <option value="small">Small</option><option selected value="medium">Medium</option><option value="large">Large</option><option value="verylarge">Very Large</option></select>
+				<label for="chat-mode">Chat Mode:</label>
+				<select id="chat-activity-mode">
+					{% for mode in chatActivityModes %}
+					<option value='{{ mode }}'> {{ mode }} </option>
+					{% endfor %}
+				</select>
+				<label for="language-option">Language:</label>
+				<select id="language-option">
+					{% for lang in language_options %}
+					<option value="{{ lang }}">{{ lang }}</option>
+					{% endfor %}
+				</select>
 				<label for="temperature">Creativity:</label>
 				<select id="temperature">		
 					<option value=0> 0 - Uninspired </option>
@@ -27,13 +39,29 @@
 				<label for="conversation-mode">Conversation mode:</label>
 				<input type="checkbox" id="conversation-mode" />
             </div>			
-            <div>           
-				<input type="text" id="UserName" readonly value="{{ username }}">
-				<button  class="button" id="logout-button">Logout</button>
+            <div>
+				<button class="button" id="clear-button">New</button>
+				<button class="button" id="save-as-note-button">Save as Note</button>
+				<span style="display:inline-block; width:20px;"></span>
 				<button class="button" id="conversations-button">Conversation List</button>
-				<button class="button" id="clear-button">Clear</button>
+				<button class="button" id="notes-button">Notes</button>
+				<button class="button" id="logout-button">Logout</button>
 			</div>
         </div>
+		<div id="save-note-panel" class="hidden">
+			<input type="text" id="save-note-title" placeholder="Note title..." />
+			<select id="save-note-category">
+				{% for cat in categories %}
+				<option value="{{ cat.categoryID }}">{{ cat.categoryName }}</option>
+				{% endfor %}
+			</select>
+			<button class="button" id="confirm-save-note">Save</button>
+			<button class="button" id="cancel-save-note" style="background-color:#6c757d;">Cancel</button>
+		</div>
+		<div id="sync-banner" class="hidden">
+			<span id="sync-message"></span>
+			<button id="sync-dismiss" onclick="document.getElementById('sync-banner').classList.add('hidden')">&#x2715;</button>
+		</div>
 		<div id="user-input-container">
 			<input type="text" id="user-instructions" placeholder="Custom instructions for model..." />
 		</div>
@@ -52,5 +80,6 @@
         </div>
     </div>
     <script src="{{ url_for('static', filename='conversation.js') }}"></script>
+    <script src="{{ url_for('static', filename='sync_status.js') }}"></script>
 </body>
 </html>

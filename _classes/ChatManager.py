@@ -12,11 +12,12 @@ class ChatManager:
 	conversation = Conversation()
 	messages_extended = []
 	chatUsage = []
+	client = None
 	sm = None
 
 	def __init__(self):
 		print("Initializing ChatManager")
-		openai.api_key = openai_api_key
+		self.client = openai.OpenAI(api_key=openai_api_key)
 		self.sm = StorageManager()
 		self.chat_modes = self.sm.get_chat_modes()
 
@@ -24,33 +25,14 @@ class ChatManager:
 		self.sm.shut_down()
 
 # ------------------------------------------------------- API Calls ---------------------------------------------------------
-	# @staticmethod
-	# async def execute_query(self, messages, temperature=0.2, model=defaultModel, isSystem=False):
-		# result = ""
-		# total_tokens = 0
-		# chatCompletion = WebManager.callChatCompletionAPI(messages, temperature, model)
-		# message = chatCompletion.choices[0].message
-		# if chatCompletion.choices[0].finish_reason == "Error":
-			# result = message.content
-			# if result.startswith("Socket timeout", True): result = "Request timed out."
-		# else:
-			# usage = chatCompletion.usage
-			# u = ChatUsage(self.conversation.conversationID, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens)
-			# if isSystem: u.conversationID = -100
-			# self.chatUsage.append(u)
-			# self.sm.appendUsage(u)
-			# result = message.content
-			# total_tokens = usage.total_tokens
-		#print(chatCompletion)
-		# return result, total_tokens
-
 	def execute_query(self, messages:list, temperature:float=0.2, model:str = defaultModel, isSystem=False, response_tokens:int=1000):
 		result = ""
 		token_count = 0
 		m2 = []
 		for m in messages:	m2.append(m.__dict__())
-		try: 
-			model_result = openai.ChatCompletion.create(model=model, messages=m2, temperature=temperature, max_tokens=response_tokens)
+		print(f"Executing query... model: {model} temperature: {temperature}, max_tokens: {response_tokens}")
+		try:
+			model_result = self.client.chat.completions.create(model=model, messages=m2, temperature=temperature, max_tokens=response_tokens)
 			success = True
 		except Exception as e:
 			print("ChatGPT query failed:", e)
@@ -63,22 +45,24 @@ class ChatManager:
 			usage_summary = f"Usage Summary (Prompt: {model_result.usage.prompt_tokens}, Response: {model_result.usage.completion_tokens}, Total Tokens: {model_result.usage.total_tokens}, Response Limit: {response_tokens}, Specified Model Limit: {token_limit})"
 			print(usage_summary)
 			result = model_result.choices[0].message.content
-			token_count = model_result.usage.total_tokens
-			self.append_conversation(content=result, token_count=token_count, is_response=True)
-			#result = result.replace("\n", "<BR>") 
-			#$result = result.replace("<BR><BR>", "<BR>") 
-			#result = result.replace("<BR><BR>", "<BR>") 
+
+			usage = model_result.usage
+			u = ChatUsage(self.conversation.conversationID, usage.prompt_tokens, usage.completion_tokens, usage.total_tokens)
+			if isSystem: u.conversationID = -100
+			self.chatUsage.append(u)
+			self.sm.append_usage(u)
+			token_count = usage.total_tokens
 		return result, token_count
 		
 	def get_token_count(self, text:str):
 		token_count = 0
 		if text:
-			encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+			encoding = tiktoken.get_encoding("cl100k_base")
 			token_count = len(encoding.encode(text))
 			print(f" The text contains {token_count} tokens.")
 		return token_count
 
-	def chatbot_query(self, question, activity_mode, language_option, user_instructions=""):
+	def chatbot_query(self, question, activity_mode, language_option, response_tokens:int=1000, user_instructions=""):
 		result = ""
 		if question:
 			messages = []
@@ -92,7 +76,7 @@ class ChatManager:
 
 			if activity_mode.conversational:
 				if self.conversation_token_count > 750 and len(self.messages_extended) > 2:
-					self.conversationSummarize()
+					self.conversation_summarize()
 				if self.conversation.summary:
 					messages.append(ChatMessage("system", "Conversation summary: " + self.conversation.summary))
 				for m in self.messages_extended:
@@ -102,7 +86,7 @@ class ChatManager:
 						messages.append(ChatMessage(m.role, m.content[:100]))
 			messages.append(ChatMessage("user", question))
 			self.append_conversation(question, user_tokens, False)
-			content, total_tokens = self.execute_query(messages, activity_mode.temperature, self.currentModel, False)
+			content, total_tokens = self.execute_query(messages, activity_mode.temperature, self.currentModel, False, response_tokens)
 			self.append_conversation(content=content, token_count=total_tokens, is_response=True)
 		return content
 
@@ -117,7 +101,7 @@ class ChatManager:
 
 		self.conversation_token_count -= self.get_token_count(self.conversation.summary)
 		content, total_tokens = self.execute_query(messages, 0.0, defaultModel, True)
-		self.conversation.summary = result
+		self.conversation.summary = content
 		self.conversation_token_count += total_tokens
 
 	def conversation_make_title(self):
@@ -158,13 +142,22 @@ class ChatManager:
 		self.conversation_token_count = 0
 		print("Chat conversation cleared.")
 
+	def auto_save(self):
+		if not self.conversation.saved and self.messages_extended:
+			self.sm.save_conversation(self.conversation, self.messages_extended)
+
 	def save_conversation(self):
-		self.conversation_make_title()  # This only gets called once so title should be empty
+		self.conversation_make_title()
 		self.sm.save_conversation(self.conversation, self.messages_extended)
 
 	def load_conversation(self, conversationID):
 		print("Asked to load conversation:", conversationID)
-		self.conversation = self.sm.get_conversation(conversationID)
+		conversation = self.sm.get_conversation(conversationID)
+		if not conversation:
+			print("Could not locate:", conversationID)
+			self.clear_conversation()
+			return
+		self.conversation = conversation
 		if self.conversation.conversationID != conversationID:
 			print("Could not locate:", conversationID)
 			self.clear_conversation()

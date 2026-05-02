@@ -28,14 +28,14 @@ label { padding: 5px;}
     flex-direction: column;
 }
 
-.user-message {
+.user-message, .note-content {
     background-color: #dff0d8;
     padding: 10px;
     border-radius: 10px;
     margin-bottom: 10px;
 }
 
-.conversation-title {
+.conversation-title, .note-title, .note-category {
     background-color: #dff0d8;
     padding: 10px;
     border-radius: 10px;
@@ -106,3 +106,70 @@ label { padding: 5px;}
 	margin: 10px;
 }
 
+.markdowncode { 	background-color: black; color: white;  }
+
+.note-container { border-bottom: 1px solid #e0e0e0; margin-bottom: 5px; }
+
+.note-title {
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: bold;
+}
+.note-title:hover { background-color: #f0f0f0; border-radius: 5px; }
+
+.note-category-badge {
+    background-color: #007bff;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: normal;
+    white-space: nowrap;
+}
+
+.note-date {
+    margin-left: auto;
+    font-size: 12px;
+    color: #888;
+    font-weight: normal;
+}
+
+.note-actions { margin-top: 10px; display: flex; gap: 5px; }
+
+#save-note-panel {
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+#save-note-panel.visible { display: flex; }
+#save-note-panel.hidden { display: none; }
+#save-note-panel input { flex-grow: 1; padding: 8px; border: 1px solid #ccc; border-radius: 5px; }
+#save-note-panel select { padding: 8px; border: 1px solid #ccc; border-radius: 5px; }
+
+#sync-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 5px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: #856404;
+}
+#sync-dismiss {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: #856404;
+    padding: 0 4px;
+}

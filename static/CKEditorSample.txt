@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask CKEditor</title>
+    <!-- Include CKEditor from CDN -->
+    <script src="https://cdn.ckeditor.com/ckeditor5/35.1.0/classic/ckeditor.js"></script>
+</head>
+<body>
+    <h1>CKEditor Example</h1>
+    <form action="/save" method="post">
+        <!-- Create a textarea with 'editor' id for CKEditor to replace -->
+        <textarea id="editor" name="editorContent"></textarea>
+        <br>
+        <input type="submit" value="Save">
+    </form>
+
+    <script>
+        // Replace the textarea with id 'editor' with CKEditor
+        ClassicEditor
+            .create(document.querySelector('#editor'))
+            .then(editor => {
+                console.log(editor);
+            })
+            .catch(error => {
+                console.error(error);
+            });
+    </script>
+</body>
+</html>
